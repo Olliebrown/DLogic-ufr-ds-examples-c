@@ -1,0 +1,5 @@
+3K3DES key: 000000000000000000000000000000000000000000000000
+AID 3 bytes hex: D30000
+AID key number for auth: 0
+File ID: 1
+Internal key number: 1

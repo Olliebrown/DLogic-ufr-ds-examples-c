@@ -15,7 +15,7 @@
 #include <windows.h>
 #include <conio.h>
 
-#define APP_VERSION	"1.6"
+#define APP_VERSION	"1.7"
 #include "lib/include/uFCoder.h"
 
 void convert_str_to_key(std::string key_str, unsigned char *key, unsigned char key_length);
@@ -58,13 +58,14 @@ void SamStoreKey(void);
 void GetFileSetting(void);
 void ChangeFileSetting(void);
 void DeleteTmcFile(void);
+void CheckECCSignature(void);
 
 bool set_not_changeable = false, create_with_master = false, master_not_changeable = false;
 
 std::string card_operation_status = "";
 std::string settings[7];
 
-unsigned char key_ext[16];
+//unsigned char key_ext[16];
 unsigned long aid;
 unsigned char aid_key_nr;
 unsigned char key_nr;
@@ -651,7 +652,7 @@ char* get_result_str(unsigned short card_status, unsigned short exec_time)
 		break;
 
      case COMMIT_TRANSACTION_ERROR:
-          strcat(retstr, "Error occured during the commit transaction");
+          strcat(retstr, "Error occurred during the commit transaction");
 		prn_time = false;
 		break;
 
@@ -717,7 +718,8 @@ void usage(void)
 			   "  (t) - Change config parameters\n"
 			   "  (u) - Get file settings (Desfire light only)\n"
 			   "  (v) - Change file settings (Desfire light only)\n"
-			   "  (w) - Delete transaction MAC file (Desfire light only)\n");
+			   "  (w) - Delete transaction MAC file (Desfire light only)\n"
+			   "  (x) - Check ECC signature (Desfire EV2 and Desfire light)\n");
 			   printf(" --------------------------------------------------\n");
 }
 //------------------------------------------------------------------------------
@@ -853,6 +855,11 @@ void menu(char key)
         case 'w':
         case 'W':
             DeleteTmcFile();
+            break;
+        case 'x':
+        case 'X':
+            CheckECCSignature();
+            break;
 		default:
 			usage();
 			break;
@@ -5323,6 +5330,7 @@ void ChangeFileSetting(void)
     uint8_t curr_comm_mode, new_comm_mode;
     int comm_choice = 0;
     uint8_t dfl_status;
+    uint8_t key_ext[24];
 
 	int read_key_nr, write_key_nr, read_write_key_nr, change_key_nr;
 
@@ -5396,6 +5404,7 @@ void DeleteTmcFile(void)
    UFR_STATUS status;
    int key_nr = 0;
    uint8_t dfl_status;
+   uint8_t key_ext[24];
 
    if (internal_key == false)
     {
@@ -5424,4 +5433,91 @@ void DeleteTmcFile(void)
     }
     else
         std::cout << "File setting changed successfully" << std::endl;
+}
+
+void CheckECCSignature(void)
+{
+    UFR_STATUS status = UFR_NO_CARD;
+    int key_nr = 0;
+    unsigned char key_ext[24];
+    uint8_t card_uid[7];
+    uint8_t ecc_signature[56];
+    uint8_t card_type;
+
+    aid = strtol(settings[1].c_str(),NULL,16);
+
+    aid_key_nr = stoul(settings[2], nullptr, 10);
+
+    if (internal_key == false)
+    {
+        if(!prepare_key(key_ext))
+        {
+            return;
+        }
+    }
+    else
+    {
+        key_nr = stoul(settings[4],nullptr,10);
+    }
+
+    if (master_authent_req == true)
+    {
+        if (internal_key == true)
+        {
+            switch(key_type_nr)
+            {
+            case DES_KEY_TYPE:
+                status = uFR_int_DesfireRidReadECCSignature_des(key_nr, aid, aid_key_nr, card_uid, ecc_signature, &card_type);
+                break;
+            case DES2K_KEY_TYPE:
+                status = uFR_int_DesfireRidReadECCSignature_2k3des(key_nr, aid, aid_key_nr, card_uid, ecc_signature, &card_type);
+                break;
+            case DES3K_KEY_TYPE:
+                status = uFR_int_DesfireRidReadECCSignature_3k3des(key_nr, aid, aid_key_nr, card_uid, ecc_signature, &card_type);
+                break;
+            case AES_KEY_TYPE:
+                status = uFR_int_DesfireRidReadECCSignature_aes(key_nr, aid, aid_key_nr, card_uid, ecc_signature, &card_type);
+                break;
+            }
+        }
+        else
+        {
+            switch(key_type_nr)
+            {
+            case DES_KEY_TYPE:
+                status = uFR_int_DesfireRidReadECCSignature_des_PK(key_ext, aid, aid_key_nr, card_uid, ecc_signature, &card_type);
+                break;
+            case DES2K_KEY_TYPE:
+                status = uFR_int_DesfireRidReadECCSignature_2k3des_PK(key_ext, aid, aid_key_nr, card_uid, ecc_signature, &card_type);
+                break;
+            case DES3K_KEY_TYPE:
+                status = uFR_int_DesfireRidReadECCSignature_3k3des_PK(key_ext, aid, aid_key_nr, card_uid, ecc_signature, &card_type);
+                break;
+            case AES_KEY_TYPE:
+                status = uFR_int_DesfireRidReadECCSignature_aes_PK(key_ext, aid, aid_key_nr, card_uid, ecc_signature, &card_type);
+                break;
+            }
+        }
+    }
+    else
+    {
+        status = uFR_int_DesfireUidReadECCSignature(ecc_signature, card_uid, &card_type);
+    }
+
+    if (status)
+    {
+        std::cout << std::endl << "Read ECC signature error " << UFR_Status2String(status) << std::endl;
+        return;
+    }
+
+    status = OriginalityCheck(ecc_signature, card_uid, 7, card_type);
+
+    if(status == UFR_OK)
+        std::cout << std::endl << "TAG IS NXP GENUINE " << UFR_Status2String(status) << std::endl;
+    else if(status == UFR_NOT_NXP_GENUINE)
+        std::cout << std::endl << "TAG IS NOT NXP GENUINE " << UFR_Status2String(status) << std::endl;
+    else if(status == UFR_OPEN_SSL_DYNAMIC_LIB_FAILED)
+        std::cout << std::endl << "OpenSSL library error " << UFR_Status2String(status) << std::endl;
+    else if(status == UFR_OPEN_SSL_DYNAMIC_LIB_NOT_FOUND)
+        std::cout << std::endl << "OpenSSL library not found " << UFR_Status2String(status) << std::endl;
 }
