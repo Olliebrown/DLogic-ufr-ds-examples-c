@@ -16,7 +16,7 @@
 #include <conio.h>
 
 #define APP_VERSION	"1.7"
-#include "lib/include/uFCoder.h"
+#include "ufr-lib/include/uFCoder.h"
 
 void convert_str_to_key(std::string key_str, unsigned char *key, unsigned char key_length);
 bool prepare_key(unsigned char *key);
